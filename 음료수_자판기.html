@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>간단한 음료 자판기</title>
+  <style>
+    body {font-family: Arial, sans-serif; background: #f0f4ff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;}
+    .vending {background: #fff; padding: 20px; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); width: 400px;}
+    h2 {text-align: center; margin-bottom: 20px;}
+    .coins {display: flex; justify-content: center; gap: 10px; margin-bottom: 20px;}
+    .coin {padding: 8px 12px; background: #e0eaff; border: 1px solid #a5b4fc; border-radius: 10px; cursor: pointer; font-weight: bold;}
+    .coin:active {transform: translateY(1px);}
+    .change {display: flex; justify-content: center; gap: 10px; margin-bottom: 20px;}
+    .change-btn {padding: 8px 12px; background: #e0eaff; border: 1px solid #a5b4fc; border-radius: 10px; cursor: pointer; font-weight: bold;}
+    .balance {text-align: center; margin-bottom: 20px; font-weight: bold;}
+    .products {display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;}
+  .item {background: #f9fafb; border: 1px solid #d1d5db; border-radius: 10px; padding: 10px; text-align: center; cursor: pointer; position: relative;}
+  .item.available {background: #e6f0ff; border-color: #93c5fd;} /* 파란 배경: 구매 가능 */
+  .item.soldout {background: #ffe6e6; border-color: #fca5a5; cursor: not-allowed;} /* 빨간 배경: 품절 */
+  .stock {position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 8px; font-size: 12px;}
+    .item img {width: 50px; height: 50px; object-fit: contain;}
+    .item h4 {margin: 8px 0 4px 0; font-size: 14px;}
+    .price {font-size: 13px; color: #3b82f6;}
+  </style>
+</head>
+<body>
+  <div class="vending">
+    <h2>음료 자판기</h2>
+    <div class="coins" id="coins"></div>
+    <div class="balance">잔액: <span id="balance">0</span>원</div>
+    <div class="change" id="change"></div>
+    <div class="products" id="productGrid"></div>
+  </div>
+
+  <script>
+    const PRODUCTS = [
+      {id:1,name:'콜라',price:1200,emoji:'🥤', stock:5},
+      {id:2,name:'사이다',price:1100,emoji:'🧃', stock:5},
+      {id:3,name:'생수',price:800,emoji:'💧', stock:5},
+      {id:4,name:'커피',price:1500,emoji:'☕', stock:5},
+      {id:5,name:'에너지',price:2000,emoji:'⚡', stock:5},
+      {id:6,name:'주스',price:1300,emoji:'🍊', stock:5},
+    ];
+
+    const BAD_PRODUCT = [
+      {id:7,name:'우유(걸림/불량)',price:900,emoji:'🥛', stock:5},
+      {id:8,name:'티(걸림/불량)',price:1000,emoji:'🍵', stock:5},
+      {id:9,name:'스포츠(걸림/불량)',price:1400,emoji:'🏃', stock:5}
+    ]
+    
+    const COINS = [500,10,100,50];
+    const BAD_COINS = ['23(불량)'];
+    
+    const coinsEl = document.getElementById('coins');
+    const balanceEl = document.getElementById('balance');
+    const changeBtn = document.getElementById('change');
+    const productGrid = document.getElementById('productGrid');
+
+    const productEls = new Map();
+    let balance = 0;
+
+    const renderCoins = () => {
+      [...COINS, ...BAD_COINS].forEach(val => {
+        const btn = document.createElement('button');
+        btn.className = 'coin';
+        btn.textContent = `${val}원`;
+        btn.onclick = () => {
+          if (checkValidCoin(val)) {
+            insertCoin(val);
+          } else {
+            alert('유효하지 않은 동전입니다.');
+          }
+        };
+        coinsEl.appendChild(btn);
+      });
+    }
+
+    const renderProducts = () => {
+      [...PRODUCTS, ...BAD_PRODUCT].forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div style="font-size:30px">${p.emoji}</div>
+          <h4>${p.name}</h4>
+          <div class="price">${format(p.price)}원</div>
+          <div class="stock">남은: <span class="count">${p.stock}</span></div>
+        `;
+
+        div.onclick = () => {
+          if(!checkValidProduct(p)) p.status = 'bad'
+          buyProduct(p)
+        }
+        productGrid.appendChild(div);
+        productEls.set(p.id, {root: div, product: p});
+      });
+
+      updateAllProductsUI();
+    }
+
+    const renderReturnChangeBtn= () => {
+      const btn = document.createElement('button');
+      btn.className = 'change-btn';
+      btn.textContent = '잔돈 반환';
+      btn.onclick = () => {
+        if(balance > 0){
+          balance = 0;
+          updateBalance();
+          alert(`잔돈을 반환합니다.`);
+        } else {
+          alert(`반환할 잔돈이 없습니다.`);
+        }
+      };
+      changeBtn.appendChild(btn);
+    }
+
+    const buyProduct = (p) => {
+      if (p.stock <= 0) return; 
+      if(balance >= p.price){
+        if(p.status === 'bad'){
+          alert(`걸림/불량이 발생했습니다.`);
+        } else {
+          balance -= p.price;
+          p.stock -= 1;
+          updateBalance();
+          alert(`${p.name} 구매 완료!`);  
+        }
+      } else {
+        alert(`금액이 부족합니다.`);
+      }
+      updateAllProductsUI()
+    }
+
+    const updateProductUI = (id) => {
+      const entry = productEls.get(id);
+      if(!entry) return;
+      const {root, product} = entry;
+      const countEl = root.querySelector('.count');
+      countEl.textContent = product.stock;
+      console.log(product)
+       if(balance >= product.price){
+          root.classList.add('available');
+        }
+      if(product.stock <= 0){
+        root.classList.remove('available');
+        root.classList.add('soldout');
+      }
+    }
+
+    const updateAllProductsUI = () => {
+      productEls.forEach(({root, product}) => {
+        const countEl = root.querySelector('.count');
+        countEl.textContent = product.stock;
+        root.classList.remove('available');
+        root.classList.remove('soldout');
+
+        if(balance >= product.price){
+          root.classList.add('available');
+        }
+        if(product.stock <= 0 || product?.status === 'bad'){
+          root.classList.add('soldout');
+        } 
+      });
+    }
+
+    const updateBalance = () => {
+      balanceEl.textContent = format(balance);
+      updateAllProductsUI();
+    }
+
+    const checkValidCoin = (coin) => {
+      return COINS.includes(coin);
+    }
+
+    const checkValidProduct = (coin) => {
+      return PRODUCTS.includes(coin);
+    }
+
+    const insertCoin = (coin) => {
+      balance += coin;
+      updateBalance();
+    }
+
+    const format = (n) => n.toLocaleString();
+
+    renderCoins();
+    renderProducts();
+    renderReturnChangeBtn();
+  </script>
+</body>
+</html>
